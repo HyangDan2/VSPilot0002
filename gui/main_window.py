@@ -38,7 +38,7 @@ class HD2SerialCommunicator(QMainWindow):
         header_layout = QHBoxLayout()
         
         title_label = QLabel("HD2 RS-232C Serial Communicator")
-        title_label.setFont(QFont("Arial", 16, QFont.Bold))
+        title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         header_layout.addWidget(title_label)
         
         header_layout.addStretch()
@@ -52,8 +52,8 @@ class HD2SerialCommunicator(QMainWindow):
         # Scroll area for port frames
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
         # Container for port frames
         self.ports_container = QWidget()
