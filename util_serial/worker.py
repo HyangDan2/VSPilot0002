@@ -3,7 +3,7 @@ Serial Worker Module
 Handles serial communication in a separate thread
 """
 
-import serial
+from serial import Serial
 from PySide6.QtCore import QThread, Signal
 from typing import Optional
 
@@ -14,7 +14,7 @@ class SerialWorker(QThread):
     data_received = Signal(int, str)  # port_index, data
     error_occurred = Signal(int, str)  # port_index, error_message
     
-    def __init__(self, port_index: int, serial_connection: serial.Serial):
+    def __init__(self, port_index: int, serial_connection: Serial):
         super().__init__()
         self.port_index = port_index
         self.serial_connection = serial_connection

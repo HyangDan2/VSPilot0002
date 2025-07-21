@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
 from PySide6.QtCore import Qt
 from typing import List, Optional
 
-from serial.worker import SerialWorker
+from util_serial.worker import SerialWorker
 
 
 class SerialPortFrame(QFrame):
@@ -25,7 +25,7 @@ class SerialPortFrame(QFrame):
         
     def setup_ui(self):
         """Setup the UI for this port frame"""
-        self.setFrameStyle(QFrame.StyledPanel)
+        self.setFrameStyle(QFrame.Shape.StyledPanel)
         self.setLineWidth(2)
         
         layout = QVBoxLayout()
