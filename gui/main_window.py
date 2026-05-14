@@ -232,7 +232,6 @@ class GenericRS232CCommunicator(QMainWindow):
                 command_text = str(row_data["command"]).strip()
                 if not command_text:
                     continue
-                next_raw = str(row_data["next_command_no"]).strip()
                 steps.append(
                     CommandStep(
                         command_no=int(row_data["command_no"]),
