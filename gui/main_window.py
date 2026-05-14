@@ -136,6 +136,14 @@ class HD2SerialCommunicator(QMainWindow):
         remove_btn.clicked.connect(self.remove_selected_command_rows)
         toolbar.addWidget(remove_btn)
 
+        select_all_btn = QPushButton("Select All")
+        select_all_btn.clicked.connect(self.enable_all_commands)
+        toolbar.addWidget(select_all_btn)
+
+        unselect_all_btn = QPushButton("Unselect All")
+        unselect_all_btn.clicked.connect(self.disable_all_commands)
+        toolbar.addWidget(unselect_all_btn)
+
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
@@ -155,18 +163,6 @@ class HD2SerialCommunicator(QMainWindow):
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.command_table)
-
-        footer = QHBoxLayout()
-        select_all_btn = QPushButton("Select All")
-        select_all_btn.clicked.connect(self.enable_all_commands)
-        footer.addWidget(select_all_btn)
-
-        unselect_all_btn = QPushButton("Unselect All")
-        unselect_all_btn.clicked.connect(self.disable_all_commands)
-        footer.addWidget(unselect_all_btn)
-
-        footer.addStretch()
-        layout.addLayout(footer)
 
         return widget
 
