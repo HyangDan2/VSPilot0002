@@ -2,11 +2,13 @@
 
 ## Overview
 
-The application is now organized as a horizontal three-panel workspace:
+The application is now organized in two levels:
 
-- Left 40%: command spreadsheet
-- Center 40%: result spreadsheet
-- Right 20%: terminal log
+- Top 80%:
+  - left 50%: command spreadsheet
+  - right 50%: result spreadsheet
+- Bottom 20%:
+  - full-width terminal log
 
 All port-related settings are managed from the `Port Settings` menu.
 
@@ -83,12 +85,14 @@ Double-click the `Result Data` cell to open the full cell contents in a popup wi
 
 ## Automatic Measurement Logging
 
-When the first result row is created during a run, the application automatically creates files in the `log/` folder:
+The application keeps one autosave result file and one autosave terminal log file per project/session in the `log/` folder:
 
-- `measurement_YYYYMMDD_HHMMSS_results.csv`
-- `measurement_YYYYMMDD_HHMMSS_terminal.log`
+- `PROJECTNAME_results.csv`
+- `PROJECTNAME_terminal.log`
 
-The timestamp comes from the first result row of that run. The files are updated automatically as new results and terminal messages arrive.
+If the project has not been saved yet, the autosave base name is `unsaved_project`.
+
+The files are updated automatically as new results and terminal messages arrive. When you use `Clear` in the Result View, the result autosave file is rewritten from the beginning using the cleared table state.
 
 ## Run Menu
 

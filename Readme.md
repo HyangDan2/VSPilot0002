@@ -4,11 +4,13 @@ HD2 RS-232C Command Studio is a PySide6 desktop application for spreadsheet-styl
 
 ## Interface
 
-The application uses a horizontal `40:40:20` workspace:
+The application uses a split workspace:
 
-- Left 40%: command spreadsheet
-- Center 40%: result spreadsheet
-- Right 20%: status terminal log
+- Top 80%:
+  - left 50%: command spreadsheet
+  - right 50%: result spreadsheet
+- Bottom 20%:
+  - full-width status terminal log
 
 All serial-port settings, including CR/LF line endings, are managed from the `Port Settings` menu.
 
@@ -22,7 +24,7 @@ All serial-port settings, including CR/LF line endings, are managed from the `Po
 - Live terminal log for connection state, TX/RX traffic, and errors
 - JSON project save/load
 - CSV and log export
-- Automatic measurement autosave into the `log/` folder using the first result timestamp
+- Project-scoped autosave into the `log/` folder for results and terminal logs
 
 ## Requirements
 

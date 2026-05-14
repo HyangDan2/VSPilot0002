@@ -3,8 +3,8 @@
 ## UI
 
 - `gui/main_window.py`
-  Main spreadsheet-style application window with a horizontal 40:40:20 layout,
-  result detail popup, and measurement autosave hooks
+  Main spreadsheet-style application window with a 50:50 top split, bottom terminal log,
+  result detail popup, and project-scoped measurement autosave hooks
 - `gui/port_settings_dialog.py`
   Menu-driven dialog for all logical port settings
 
@@ -28,7 +28,7 @@
 3. The manager ensures the corresponding session is connected.
 4. The session sends the command using the port settings from the menu.
 5. Returned data is captured in the result spreadsheet and mirrored to the terminal log.
-6. The first result of each run starts automatic measurement file output in `log/`.
+6. Result and terminal data are continuously mirrored into project-scoped autosave files under `log/`.
 
 ## Project File
 
