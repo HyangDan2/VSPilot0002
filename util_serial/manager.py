@@ -24,10 +24,14 @@ class SerialPortManager(QObject):
         super().__init__()
         self._configs: Dict[int, SerialPortConfig] = {}
         self._sessions: Dict[int, SerialSession] = {}
+        self._forwarded_rx_counts: Dict[int, int] = {}
+        self._forwarded_rx_bytes: Dict[int, int] = {}
 
     def set_port_configs(self, configs: List[SerialPortConfig]) -> None:
         self.disconnect_all()
         self._configs = {config.port_no: config for config in configs}
+        self._forwarded_rx_counts = {config.port_no: 0 for config in configs}
+        self._forwarded_rx_bytes = {config.port_no: 0 for config in configs}
         self.log_message.emit(f"Loaded {len(self._configs)} logical port setting(s).")
 
     def get_port_configs(self) -> List[SerialPortConfig]:
@@ -64,9 +68,9 @@ class SerialPortManager(QObject):
             session.deleteLater()
 
         session = SerialSession(config)
-        session.log_message.connect(self.log_message)
-        session.data_received.connect(self.data_received)
-        session.state_changed.connect(self.port_state_changed)
+        session.log_message.connect(self.log_message.emit)
+        session.data_received.connect(self._handle_session_data_received)
+        session.state_changed.connect(self.port_state_changed.emit)
         session.connect()
         self._sessions[port_no] = session
         return session
@@ -75,3 +79,34 @@ class SerialPortManager(QObject):
         session = self.ensure_connected(port_no)
         session.send_command(command)
         return session.wait_for_response(timeout_ms)
+
+    def _handle_session_data_received(self, port_no: int, data: bytes) -> None:
+        self._forwarded_rx_counts[port_no] = self._forwarded_rx_counts.get(port_no, 0) + 1
+        self._forwarded_rx_bytes[port_no] = self._forwarded_rx_bytes.get(port_no, 0) + len(data)
+        self.log_message.emit(
+            f"[RX DEBUG Port {port_no}] manager forwarded chunk={len(data)} "
+            f"total_chunks={self._forwarded_rx_counts[port_no]} total_bytes={self._forwarded_rx_bytes[port_no]}"
+        )
+        self.data_received.emit(port_no, data)
+
+    def get_rx_debug_snapshot(self) -> List[dict]:
+        snapshots: List[dict] = []
+        for config in self.get_port_configs():
+            port_no = config.port_no
+            session = self._sessions.get(port_no)
+            session_snapshot = session.get_debug_snapshot() if session else {
+                "port_no": port_no,
+                "device": config.device,
+                "connected": False,
+                "rx_chunks": 0,
+                "rx_bytes": 0,
+                "buffer_size": 0,
+                "wait_calls": 0,
+                "wait_timeouts": 0,
+                "last_wait_bytes": 0,
+                "last_rx_age_ms": None,
+            }
+            session_snapshot["manager_forwarded_chunks"] = self._forwarded_rx_counts.get(port_no, 0)
+            session_snapshot["manager_forwarded_bytes"] = self._forwarded_rx_bytes.get(port_no, 0)
+            snapshots.append(session_snapshot)
+        return snapshots

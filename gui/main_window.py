@@ -63,6 +63,8 @@ class HD2SerialCommunicator(QMainWindow):
         self.project_config = ProjectConfig.default()
         self.port_manager = SerialPortManager()
         self.executor_thread: Optional[CommandExecutor] = None
+        self._ui_rx_counts: Dict[int, int] = {}
+        self._ui_rx_bytes: Dict[int, int] = {}
 
         self.setup_ui()
         self.setup_menus()
@@ -218,6 +220,7 @@ class HD2SerialCommunicator(QMainWindow):
 
         tools_menu = menu_bar.addMenu("Tools")
         self.add_menu_action(tools_menu, "Validate Command Links", self.validate_command_links)
+        self.add_menu_action(tools_menu, "Show RX Debug Snapshot", self.show_rx_debug_snapshot)
         self.add_menu_action(tools_menu, "Clear Results", self.clear_results)
         self.add_menu_action(tools_menu, "Clear Terminal", self.clear_terminal)
 
@@ -332,6 +335,8 @@ class HD2SerialCommunicator(QMainWindow):
     def apply_project_config(self, config: ProjectConfig) -> None:
         self.project_config = config
         self.port_manager.set_port_configs(config.ports)
+        self._ui_rx_counts = {port.port_no: 0 for port in config.ports}
+        self._ui_rx_bytes = {port.port_no: 0 for port in config.ports}
 
         self.command_table.setRowCount(0)
         for row in config.commands:
@@ -514,6 +519,12 @@ class HD2SerialCommunicator(QMainWindow):
         self.log_terminal.verticalScrollBar().setValue(self.log_terminal.verticalScrollBar().maximum())
 
     def on_port_data_received(self, port_no: int, data: bytes) -> None:
+        self._ui_rx_counts[port_no] = self._ui_rx_counts.get(port_no, 0) + 1
+        self._ui_rx_bytes[port_no] = self._ui_rx_bytes.get(port_no, 0) + len(data)
+        self.append_log_message(
+            f"[RX DEBUG Port {port_no}] UI received chunk={len(data)} "
+            f"total_chunks={self._ui_rx_counts[port_no]} total_bytes={self._ui_rx_bytes[port_no]}"
+        )
         preview = data.decode("utf-8", errors="replace").strip()
         if preview:
             self.append_log_message(f"[RX Port {port_no}] {preview}")
@@ -596,6 +607,42 @@ class HD2SerialCommunicator(QMainWindow):
             )
             return
         QMessageBox.information(self, "Command Validation", "All enabled command links are valid.")
+
+    def show_rx_debug_snapshot(self) -> None:
+        snapshots = self.port_manager.get_rx_debug_snapshot()
+        if not snapshots:
+            QMessageBox.information(self, "RX Debug Snapshot", "No logical ports are configured.")
+            return
+
+        lines = []
+        for snapshot in snapshots:
+            port_no = snapshot["port_no"]
+            lines.append(
+                " | ".join(
+                    [
+                        f"Port #{port_no}",
+                        f"device={snapshot['device'] or '-'}",
+                        f"connected={snapshot['connected']}",
+                        f"session_rx_chunks={snapshot['rx_chunks']}",
+                        f"session_rx_bytes={snapshot['rx_bytes']}",
+                        f"manager_chunks={snapshot['manager_forwarded_chunks']}",
+                        f"manager_bytes={snapshot['manager_forwarded_bytes']}",
+                        f"ui_chunks={self._ui_rx_counts.get(port_no, 0)}",
+                        f"ui_bytes={self._ui_rx_bytes.get(port_no, 0)}",
+                        f"buffer={snapshot['buffer_size']}",
+                        f"wait_calls={snapshot['wait_calls']}",
+                        f"wait_timeouts={snapshot['wait_timeouts']}",
+                        f"last_wait_bytes={snapshot['last_wait_bytes']}",
+                        f"last_rx_age_ms={snapshot['last_rx_age_ms']}",
+                    ]
+                )
+            )
+
+        message = "\n".join(lines)
+        self.append_log_message("[RX DEBUG SNAPSHOT]")
+        for line in lines:
+            self.append_log_message(line)
+        QMessageBox.information(self, "RX Debug Snapshot", message)
 
     def show_about(self) -> None:
         QMessageBox.information(

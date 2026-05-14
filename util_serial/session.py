@@ -29,6 +29,13 @@ class SerialSession(QObject):
         self.worker: Optional[SerialWorker] = None
         self._buffer = bytearray()
         self._buffer_lock = threading.Lock()
+        self._data_event = threading.Event()
+        self._last_rx_time = 0.0
+        self._rx_chunks = 0
+        self._rx_bytes = 0
+        self._wait_calls = 0
+        self._wait_timeouts = 0
+        self._last_wait_bytes = 0
 
     def connect(self) -> None:
         if self.connection and self.connection.is_open:
@@ -99,16 +106,45 @@ class SerialSession(QObject):
         payload = command.encode(self.config.encoding, errors="replace") + self.line_ending_bytes()
         with self._buffer_lock:
             self._buffer.clear()
+        self._data_event.clear()
+        self._last_rx_time = 0.0
         self.connection.write(payload)
         self.log_message.emit(f"[TX Port {self.config.port_no}] {command}")
 
     def wait_for_response(self, timeout_ms: int) -> bytes:
-        deadline = time.monotonic() + max(timeout_ms, 0) / 1000.0
+        self._wait_calls += 1
+        timeout_s = max(timeout_ms, 0) / 1000.0
+        if timeout_s == 0:
+            with self._buffer_lock:
+                data = bytes(self._buffer)
+                self._buffer.clear()
+            self._last_wait_bytes = len(data)
+            return data
+
+        deadline = time.monotonic() + timeout_s
+        first_chunk_arrived = self._data_event.wait(timeout_s)
+        if not first_chunk_arrived:
+            self._wait_timeouts += 1
+            self._last_wait_bytes = 0
+            self.log_message.emit(
+                f"[RX DEBUG Port {self.config.port_no}] wait_for_response timed out after {timeout_ms} ms with no data event."
+            )
+            return b""
+
+        quiet_period_s = 0.12
         while time.monotonic() < deadline:
+            if time.monotonic() - self._last_rx_time >= quiet_period_s:
+                break
             time.sleep(0.02)
+
         with self._buffer_lock:
             data = bytes(self._buffer)
             self._buffer.clear()
+        self._data_event.clear()
+        self._last_wait_bytes = len(data)
+        self.log_message.emit(
+            f"[RX DEBUG Port {self.config.port_no}] wait_for_response collected {len(data)} byte(s)."
+        )
         return data
 
     def line_ending_bytes(self) -> bytes:
@@ -123,8 +159,35 @@ class SerialSession(QObject):
     def on_data_received(self, data: bytes) -> None:
         with self._buffer_lock:
             self._buffer.extend(data)
+            self._last_rx_time = time.monotonic()
+            self._rx_chunks += 1
+            self._rx_bytes += len(data)
+            buffer_size = len(self._buffer)
+        self._data_event.set()
+        preview_hex = data[:24].hex(" ").upper()
+        preview_text = data.decode(self.config.encoding, errors="replace").replace("\r", "\\r").replace("\n", "\\n")
+        self.log_message.emit(
+            f"[RX DEBUG Port {self.config.port_no}] worker->session chunk={len(data)} total_bytes={self._rx_bytes} "
+            f"buffer={buffer_size} hex={preview_hex} text={preview_text[:80]}"
+        )
         self.data_received.emit(self.config.port_no, data)
 
     def on_error(self, error_message: str) -> None:
         self.log_message.emit(f"[ERROR Port {self.config.port_no}] {error_message}")
         self.disconnect()
+
+    def get_debug_snapshot(self) -> dict:
+        with self._buffer_lock:
+            buffer_size = len(self._buffer)
+        return {
+            "port_no": self.config.port_no,
+            "device": self.config.device,
+            "connected": self.is_connected(),
+            "rx_chunks": self._rx_chunks,
+            "rx_bytes": self._rx_bytes,
+            "buffer_size": buffer_size,
+            "wait_calls": self._wait_calls,
+            "wait_timeouts": self._wait_timeouts,
+            "last_wait_bytes": self._last_wait_bytes,
+            "last_rx_age_ms": int((time.monotonic() - self._last_rx_time) * 1000) if self._last_rx_time else None,
+        }
