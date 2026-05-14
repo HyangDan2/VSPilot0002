@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-HD2 GUI RS-232C Serial Communicator
+Generic RS232C Communicator V0.01
 Main application entry point
 """
 
 import sys
 from PySide6.QtWidgets import QApplication
-from gui.main_window import HD2SerialCommunicator
+from gui.main_window import GenericRS232CCommunicator
 
 
 def main():
     """Main application entry point"""
     app = QApplication(sys.argv)
-    app.setApplicationName("HD2 Serial Communicator")
-    app.setOrganizationName("HD2")
+    app.setApplicationName("Generic RS232C Communicator V0.01")
+    app.setOrganizationName("Generic RS232C")
     
     # Create and show main window
-    window = HD2SerialCommunicator()
+    window = GenericRS232CCommunicator()
     window.show()
     
     # Run application
