@@ -11,6 +11,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -28,7 +29,7 @@ from PySide6.QtWidgets import (
 from gui.port_settings_dialog import PortSettingsDialog
 from util_serial.executor import CommandExecutor, CommandStep
 from util_serial.manager import SerialPortManager
-from util_serial.project_config import ProjectConfig
+from util_serial.project_config import SerialPortConfig
 
 
 class ResultDataDialog(QDialog):
@@ -54,10 +55,7 @@ class GenericRS232CCommunicator(QMainWindow):
         "Command #",
         "Port #",
         "Command",
-        "Wait Time (ms)",
-        "Next Command #",
         "Timeout (ms)",
-        "Memo",
     ]
     RESULT_COLUMNS = [
         "Time",
@@ -72,7 +70,6 @@ class GenericRS232CCommunicator(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.project_config = ProjectConfig.default()
         self.port_manager = SerialPortManager()
         self.executor_thread: Optional[CommandExecutor] = None
 
@@ -144,9 +141,6 @@ class GenericRS232CCommunicator(QMainWindow):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.command_table)
 
         return widget
@@ -158,6 +152,13 @@ class GenericRS232CCommunicator(QMainWindow):
         title = QLabel("Result View")
         title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         layout.addWidget(title)
+
+        toolbar = QHBoxLayout()
+        export_btn = QPushButton("Export")
+        export_btn.clicked.connect(self.export_results)
+        toolbar.addWidget(export_btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
 
         self.result_table = QTableWidget(0, len(self.RESULT_COLUMNS))
         self.result_table.setHorizontalHeaderLabels(self.RESULT_COLUMNS)
@@ -180,12 +181,8 @@ class GenericRS232CCommunicator(QMainWindow):
         return widget
 
     def apply_default_config(self) -> None:
-        self.port_manager.set_port_configs(self.project_config.ports)
-        self.command_table.setRowCount(0)
-        for row in self.project_config.commands:
-            self.add_command_row(row)
-        if self.command_table.rowCount() == 0:
-            self.add_command_row()
+        self.port_manager.set_port_configs([SerialPortConfig(port_no=1)])
+        self.add_command_row()
 
     def add_command_row(self, row_data: Optional[Dict[str, Any]] = None) -> None:
         row = self.command_table.rowCount()
@@ -201,10 +198,7 @@ class GenericRS232CCommunicator(QMainWindow):
             str(values.get("command_no", row + 1)),
             str(values.get("port_no", 1)),
             values.get("command", ""),
-            str(values.get("wait_time_ms", 0)),
-            "" if values.get("next_command_no") in (None, "") else str(values.get("next_command_no")),
             str(values.get("timeout_ms", 1000)),
-            values.get("memo", ""),
         ]
         for column_offset, value in enumerate(defaults, start=1):
             self.command_table.setItem(row, column_offset, QTableWidgetItem(value))
@@ -221,10 +215,7 @@ class GenericRS232CCommunicator(QMainWindow):
             "command_no": self.table_text(row, 1),
             "port_no": self.table_text(row, 2),
             "command": self.table_text(row, 3),
-            "wait_time_ms": self.table_text(row, 4),
-            "next_command_no": self.table_text(row, 5),
-            "timeout_ms": self.table_text(row, 6),
-            "memo": self.table_text(row, 7),
+            "timeout_ms": self.table_text(row, 4),
         }
 
     def table_text(self, row: int, column: int) -> str:
@@ -247,10 +238,10 @@ class GenericRS232CCommunicator(QMainWindow):
                         command_no=int(row_data["command_no"]),
                         port_no=int(row_data["port_no"]),
                         command=command_text,
-                        wait_time_ms=int(row_data["wait_time_ms"] or 0),
-                        next_command_no=int(next_raw) if next_raw else None,
+                        wait_time_ms=0,
+                        next_command_no=None,
                         timeout_ms=int(row_data["timeout_ms"] or 1000),
-                        memo=str(row_data["memo"]),
+                        memo="",
                     )
                 )
             except ValueError as exc:
@@ -306,6 +297,30 @@ class GenericRS232CCommunicator(QMainWindow):
         for column, value in enumerate(values):
             self.result_table.setItem(row, column, QTableWidgetItem(value))
         self.result_table.scrollToBottom()
+
+    def export_results(self) -> None:
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Results",
+            "results.csv",
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            lines = [",".join(self.RESULT_COLUMNS)]
+            for row in range(self.result_table.rowCount()):
+                values = []
+                for column in range(self.result_table.columnCount()):
+                    item = self.result_table.item(row, column)
+                    text = item.text() if item else ""
+                    values.append(f'"{text.replace(chr(34), chr(34) * 2)}"')
+                lines.append(",".join(values))
+            with open(file_path, "w", encoding="utf-8") as export_file:
+                export_file.write("\n".join(lines))
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Error", f"Failed to export results:\n{exc}")
 
     def on_executor_finished(self, success: bool, message: str) -> None:
         if self.executor_thread:
