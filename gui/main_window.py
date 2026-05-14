@@ -4,13 +4,15 @@ Main window for the spreadsheet-style RS-232C workflow.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QThread, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -26,13 +28,27 @@ from PySide6.QtWidgets import (
     QToolBar,
     QVBoxLayout,
     QWidget,
-    QAbstractItemView,
 )
 
 from gui.port_settings_dialog import PortSettingsDialog
 from util_serial.executor import CommandExecutor, CommandStep
 from util_serial.manager import SerialPortManager
-from util_serial.project_config import ProjectConfig, SerialPortConfig
+from util_serial.project_config import ProjectConfig
+
+
+class ResultDataDialog(QDialog):
+    """Read-only popup for full result-cell contents."""
+
+    def __init__(self, title: str, content: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(800, 500)
+
+        layout = QVBoxLayout(self)
+        viewer = QPlainTextEdit()
+        viewer.setReadOnly(True)
+        viewer.setPlainText(content)
+        layout.addWidget(viewer)
 
 
 class HD2SerialCommunicator(QMainWindow):
@@ -52,10 +68,12 @@ class HD2SerialCommunicator(QMainWindow):
         "Time",
         "Command #",
         "Port #",
+        "Command",
         "Result Data",
         "Status",
         "Elapsed (ms)",
     ]
+    RESULT_DATA_COLUMN = 4
 
     def __init__(self):
         super().__init__()
@@ -65,6 +83,9 @@ class HD2SerialCommunicator(QMainWindow):
         self.executor_thread: Optional[CommandExecutor] = None
         self._ui_rx_counts: Dict[int, int] = {}
         self._ui_rx_bytes: Dict[int, int] = {}
+        self.measurement_base_name: Optional[str] = None
+        self.measurement_results_path: Optional[Path] = None
+        self.measurement_terminal_path: Optional[Path] = None
 
         self.setup_ui()
         self.setup_menus()
@@ -72,7 +93,7 @@ class HD2SerialCommunicator(QMainWindow):
         self.apply_project_config(self.project_config)
 
     def setup_ui(self) -> None:
-        """Build the horizontal 60:20:20 workspace."""
+        """Build the horizontal 40:40:20 workspace."""
         self.setWindowTitle("HD2 RS-232C Command Studio")
         self.resize(1600, 900)
 
@@ -87,7 +108,7 @@ class HD2SerialCommunicator(QMainWindow):
         splitter.addWidget(self.command_panel)
         splitter.addWidget(self.result_panel)
         splitter.addWidget(self.log_panel)
-        splitter.setSizes([960, 320, 320])
+        splitter.setSizes([640, 640, 320])
 
         self.setCentralWidget(splitter)
 
@@ -132,6 +153,18 @@ class HD2SerialCommunicator(QMainWindow):
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.command_table)
 
+        footer = QHBoxLayout()
+        select_all_btn = QPushButton("Select All")
+        select_all_btn.clicked.connect(self.enable_all_commands)
+        footer.addWidget(select_all_btn)
+
+        unselect_all_btn = QPushButton("Unselect All")
+        unselect_all_btn.clicked.connect(self.disable_all_commands)
+        footer.addWidget(unselect_all_btn)
+
+        footer.addStretch()
+        layout.addLayout(footer)
+
         return widget
 
     def build_result_panel(self) -> QWidget:
@@ -142,12 +175,25 @@ class HD2SerialCommunicator(QMainWindow):
         title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         layout.addWidget(title)
 
+        toolbar = QHBoxLayout()
+        clear_btn = QPushButton("Clear")
+        clear_btn.clicked.connect(self.clear_results)
+        toolbar.addWidget(clear_btn)
+
+        export_btn = QPushButton("Export")
+        export_btn.clicked.connect(self.export_results)
+        toolbar.addWidget(export_btn)
+
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
         self.result_table = QTableWidget(0, len(self.RESULT_COLUMNS))
         self.result_table.setHorizontalHeaderLabels(self.RESULT_COLUMNS)
         self.result_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.result_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.result_table.setAlternatingRowColors(True)
         self.result_table.verticalHeader().setVisible(False)
+        self.result_table.cellDoubleClicked.connect(self.open_result_data_dialog)
         result_header = self.result_table.horizontalHeader()
         result_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         result_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -155,6 +201,7 @@ class HD2SerialCommunicator(QMainWindow):
         result_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         result_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         result_header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        result_header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.result_table)
 
         return widget
@@ -215,7 +262,7 @@ class HD2SerialCommunicator(QMainWindow):
         self.add_menu_action(run_menu, "Stop", self.stop_executor)
 
         view_menu = menu_bar.addMenu("View")
-        self.add_menu_action(view_menu, "Reset 60:20:20 Layout", self.reset_layout)
+        self.add_menu_action(view_menu, "Reset 40:40:20 Layout", self.reset_layout)
         self.add_menu_action(view_menu, "Reset Table Widths", self.reset_table_widths)
 
         tools_menu = menu_bar.addMenu("Tools")
@@ -279,6 +326,18 @@ class HD2SerialCommunicator(QMainWindow):
         source_row = selected[-1].row()
         self.add_command_row(self.command_row_to_dict(source_row))
 
+    def enable_all_commands(self) -> None:
+        self.set_all_command_enable_states(Qt.CheckState.Checked)
+
+    def disable_all_commands(self) -> None:
+        self.set_all_command_enable_states(Qt.CheckState.Unchecked)
+
+    def set_all_command_enable_states(self, state: Qt.CheckState) -> None:
+        for row in range(self.command_table.rowCount()):
+            item = self.command_table.item(row, 0)
+            if item:
+                item.setCheckState(state)
+
     def remove_selected_command_rows(self) -> None:
         rows = sorted((index.row() for index in self.command_table.selectionModel().selectedRows()), reverse=True)
         for row in rows:
@@ -337,6 +396,7 @@ class HD2SerialCommunicator(QMainWindow):
         self.port_manager.set_port_configs(config.ports)
         self._ui_rx_counts = {port.port_no: 0 for port in config.ports}
         self._ui_rx_bytes = {port.port_no: 0 for port in config.ports}
+        self.reset_measurement_autosave()
 
         self.command_table.setRowCount(0)
         for row in config.commands:
@@ -352,7 +412,7 @@ class HD2SerialCommunicator(QMainWindow):
         width = int(ui.get("width", 1600))
         height = int(ui.get("height", 900))
         self.resize(width, height)
-        splitter_sizes = ui.get("splitter_sizes", [960, 320, 320])
+        splitter_sizes = ui.get("splitter_sizes", [640, 640, 320])
         if isinstance(splitter_sizes, list) and len(splitter_sizes) == 3:
             QTimer.singleShot(0, lambda: self.splitter.setSizes([int(size) for size in splitter_sizes]))
 
@@ -485,6 +545,7 @@ class HD2SerialCommunicator(QMainWindow):
             QMessageBox.warning(self, label, "A command run is already in progress.")
             return
 
+        self.reset_measurement_autosave()
         self.executor_thread = CommandExecutor(steps, self.port_manager)
         self.executor_thread.result_ready.connect(self.append_result_row)
         self.executor_thread.log_message.connect(self.append_log_message)
@@ -500,12 +561,14 @@ class HD2SerialCommunicator(QMainWindow):
         self.executor_thread = None
 
     def append_result_row(self, result: Dict[str, Any]) -> None:
+        self.ensure_measurement_autosave_paths(str(result.get("time", "")))
         row = self.result_table.rowCount()
         self.result_table.insertRow(row)
         values = [
             str(result.get("time", "")),
             str(result.get("command_no", "")),
             str(result.get("port_no", "")),
+            str(result.get("command", "")),
             str(result.get("result_data", "")),
             str(result.get("status", "")),
             str(result.get("elapsed_ms", "")),
@@ -513,10 +576,13 @@ class HD2SerialCommunicator(QMainWindow):
         for column, value in enumerate(values):
             self.result_table.setItem(row, column, QTableWidgetItem(value))
         self.result_table.scrollToBottom()
+        self.autosave_measurement_outputs()
 
     def append_log_message(self, message: str) -> None:
         self.log_terminal.appendPlainText(message)
         self.log_terminal.verticalScrollBar().setValue(self.log_terminal.verticalScrollBar().maximum())
+        if self.measurement_terminal_path:
+            self.write_terminal_log_to_path(self.measurement_terminal_path)
 
     def on_port_data_received(self, port_no: int, data: bytes) -> None:
         self._ui_rx_counts[port_no] = self._ui_rx_counts.get(port_no, 0) + 1
@@ -551,15 +617,7 @@ class HD2SerialCommunicator(QMainWindow):
         if not file_path:
             return
 
-        lines = [",".join(self.RESULT_COLUMNS)]
-        for row in range(self.result_table.rowCount()):
-            values = []
-            for column in range(self.result_table.columnCount()):
-                item = self.result_table.item(row, column)
-                text = item.text() if item else ""
-                values.append(f'"{text.replace(chr(34), chr(34) * 2)}"')
-            lines.append(",".join(values))
-        Path(file_path).write_text("\n".join(lines), encoding="utf-8")
+        self.write_results_to_path(Path(file_path))
         self.append_log_message(f"Exported results to {file_path}")
 
     def export_terminal_log(self) -> None:
@@ -576,14 +634,15 @@ class HD2SerialCommunicator(QMainWindow):
 
     def clear_results(self) -> None:
         self.result_table.setRowCount(0)
+        self.reset_measurement_autosave()
         self.append_log_message("Cleared result view.")
 
     def clear_terminal(self) -> None:
         self.log_terminal.clear()
 
     def reset_layout(self) -> None:
-        self.splitter.setSizes([960, 320, 320])
-        self.append_log_message("Restored horizontal 60:20:20 layout.")
+        self.splitter.setSizes([640, 640, 320])
+        self.append_log_message("Restored horizontal 40:40:20 layout.")
 
     def reset_table_widths(self) -> None:
         self.command_table.resizeColumnsToContents()
@@ -643,6 +702,66 @@ class HD2SerialCommunicator(QMainWindow):
         for line in lines:
             self.append_log_message(line)
         QMessageBox.information(self, "RX Debug Snapshot", message)
+
+    def open_result_data_dialog(self, row: int, column: int) -> None:
+        if column != self.RESULT_DATA_COLUMN:
+            return
+        item = self.result_table.item(row, column)
+        if item is None:
+            return
+
+        command_item = self.result_table.item(row, 1)
+        port_item = self.result_table.item(row, 2)
+        title = "Result Data Detail"
+        if command_item and port_item:
+            title = f"Result Data - Command #{command_item.text()} / Port #{port_item.text()}"
+
+        dialog = ResultDataDialog(title, item.text(), self)
+        dialog.exec()
+
+    def reset_measurement_autosave(self) -> None:
+        self.measurement_base_name = None
+        self.measurement_results_path = None
+        self.measurement_terminal_path = None
+
+    def ensure_measurement_autosave_paths(self, result_timestamp: str) -> None:
+        if self.measurement_base_name:
+            return
+
+        log_dir = Path.cwd() / "log"
+        log_dir.mkdir(exist_ok=True)
+
+        try:
+            parsed = datetime.strptime(result_timestamp, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            parsed = datetime.now()
+
+        self.measurement_base_name = parsed.strftime("measurement_%Y%m%d_%H%M%S")
+        self.measurement_results_path = log_dir / f"{self.measurement_base_name}_results.csv"
+        self.measurement_terminal_path = log_dir / f"{self.measurement_base_name}_terminal.log"
+        self.append_log_message(
+            f"Measurement autosave started: {self.measurement_results_path.name}, {self.measurement_terminal_path.name}"
+        )
+
+    def autosave_measurement_outputs(self) -> None:
+        if self.measurement_results_path:
+            self.write_results_to_path(self.measurement_results_path)
+        if self.measurement_terminal_path:
+            self.write_terminal_log_to_path(self.measurement_terminal_path)
+
+    def write_results_to_path(self, path: Path) -> None:
+        lines = [",".join(self.RESULT_COLUMNS)]
+        for row in range(self.result_table.rowCount()):
+            values = []
+            for column in range(self.result_table.columnCount()):
+                item = self.result_table.item(row, column)
+                text = item.text() if item else ""
+                values.append(f'"{text.replace(chr(34), chr(34) * 2)}"')
+            lines.append(",".join(values))
+        path.write_text("\n".join(lines), encoding="utf-8")
+
+    def write_terminal_log_to_path(self, path: Path) -> None:
+        path.write_text(self.log_terminal.toPlainText(), encoding="utf-8")
 
     def show_about(self) -> None:
         QMessageBox.information(

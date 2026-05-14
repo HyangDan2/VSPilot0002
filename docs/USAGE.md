@@ -4,8 +4,8 @@
 
 The application is now organized as a horizontal three-panel workspace:
 
-- Left 60%: command spreadsheet
-- Center 20%: result spreadsheet
+- Left 40%: command spreadsheet
+- Center 40%: result spreadsheet
 - Right 20%: terminal log
 
 All port-related settings are managed from the `Port Settings` menu.
@@ -18,6 +18,7 @@ All port-related settings are managed from the `Port Settings` menu.
 4. In the command table, create rows that reference the logical `Port #`.
 5. Run commands with `Run All`, `Run Selected`, or `Run From Current Row`.
 6. Review structured output in the result table and live messages in the log panel.
+7. Double-click a `Result Data` cell to open the full response in a separate detail window.
 
 ## Command Table Columns
 
@@ -29,6 +30,11 @@ All port-related settings are managed from the `Port Settings` menu.
 - `Next Command #`: optional explicit jump to another command number
 - `Timeout (ms)`: response wait period for the command
 - `Memo`: free-form note for operators
+
+Use the buttons under the command table to toggle every row's `Enable` checkbox:
+
+- `Select All`
+- `Unselect All`
 
 ## Port Settings
 
@@ -58,6 +64,31 @@ This keeps CR/LF and all other port settings out of the command table.
 - `Save Project As...`: saves to a new JSON project file
 - `Export Result Table...`: writes results as CSV
 - `Export Terminal Log...`: writes the terminal pane to a text file
+
+## Result View
+
+The Result View panel includes buttons directly under its title:
+
+- `Clear`: clears the result table and resets measurement autosave tracking
+- `Export`: exports the current result table to CSV
+
+Each result row now includes:
+
+- `Command #`
+- `Port #`
+- `Command`
+- `Result Data`
+
+Double-click the `Result Data` cell to open the full cell contents in a popup window.
+
+## Automatic Measurement Logging
+
+When the first result row is created during a run, the application automatically creates files in the `log/` folder:
+
+- `measurement_YYYYMMDD_HHMMSS_results.csv`
+- `measurement_YYYYMMDD_HHMMSS_terminal.log`
+
+The timestamp comes from the first result row of that run. The files are updated automatically as new results and terminal messages arrive.
 
 ## Run Menu
 

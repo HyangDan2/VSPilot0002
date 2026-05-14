@@ -52,7 +52,7 @@ class SerialPortManager(QObject):
     def disconnect_port(self, port_no: int) -> None:
         session = self._sessions.pop(port_no, None)
         if session:
-            session.disconnect()
+            session.close_session()
             session.deleteLater()
 
     def ensure_connected(self, port_no: int) -> SerialSession:
@@ -71,7 +71,7 @@ class SerialPortManager(QObject):
         session.log_message.connect(self.log_message.emit)
         session.data_received.connect(self._handle_session_data_received)
         session.state_changed.connect(self.port_state_changed.emit)
-        session.connect()
+        session.open_session()
         self._sessions[port_no] = session
         return session
 

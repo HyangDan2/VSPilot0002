@@ -54,7 +54,7 @@ class ProjectConfig:
     @classmethod
     def default(cls) -> "ProjectConfig":
         return cls(
-            ui={"width": 1600, "height": 900, "splitter_sizes": [960, 320, 320]},
+            ui={"width": 1600, "height": 900, "splitter_sizes": [640, 640, 320]},
             ports=[SerialPortConfig(port_no=1)],
             commands=[
                 {

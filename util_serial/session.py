@@ -37,7 +37,7 @@ class SerialSession(QObject):
         self._wait_timeouts = 0
         self._last_wait_bytes = 0
 
-    def connect(self) -> None:
+    def open_session(self) -> None:
         if self.connection and self.connection.is_open:
             return
         if not self.config.device:
@@ -86,7 +86,7 @@ class SerialSession(QObject):
             f"({self.config.baudrate}, {self.config.data_bits}{self.config.parity[0] if self.config.parity else 'N'}{self.config.stop_bits})."
         )
 
-    def disconnect(self) -> None:
+    def close_session(self) -> None:
         if self.worker:
             self.worker.stop()
             self.worker.deleteLater()
@@ -174,7 +174,7 @@ class SerialSession(QObject):
 
     def on_error(self, error_message: str) -> None:
         self.log_message.emit(f"[ERROR Port {self.config.port_no}] {error_message}")
-        self.disconnect()
+        self.close_session()
 
     def get_debug_snapshot(self) -> dict:
         with self._buffer_lock:
