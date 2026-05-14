@@ -83,6 +83,7 @@ class HD2SerialCommunicator(QMainWindow):
         self.executor_thread: Optional[CommandExecutor] = None
         self._ui_rx_counts: Dict[int, int] = {}
         self._ui_rx_bytes: Dict[int, int] = {}
+        self.project_session_timestamp = self.generate_session_timestamp()
         self.measurement_results_path: Optional[Path] = None
         self.measurement_terminal_path: Optional[Path] = None
 
@@ -433,6 +434,7 @@ class HD2SerialCommunicator(QMainWindow):
         self.stop_executor()
         self.disconnect_all_ports()
         self.current_project_path = None
+        self.project_session_timestamp = self.generate_session_timestamp()
         self.apply_project_config(ProjectConfig.default())
         self.append_log_message("Created a new empty project.")
 
@@ -455,6 +457,7 @@ class HD2SerialCommunicator(QMainWindow):
         self.stop_executor()
         self.disconnect_all_ports()
         self.current_project_path = Path(file_path)
+        self.project_session_timestamp = self.generate_session_timestamp()
         self.apply_project_config(config)
         self.append_log_message(f"Loaded project: {self.current_project_path}")
 
@@ -732,8 +735,9 @@ class HD2SerialCommunicator(QMainWindow):
             base_name = self.current_project_path.stem
         else:
             base_name = "unsaved_project"
-        self.measurement_results_path = log_dir / f"{base_name}_results.csv"
-        self.measurement_terminal_path = log_dir / f"{base_name}_terminal.log"
+        timestamp = self.project_session_timestamp
+        self.measurement_results_path = log_dir / f"{base_name}_{timestamp}_results.csv"
+        self.measurement_terminal_path = log_dir / f"{base_name}_{timestamp}_terminal.log"
 
     def autosave_measurement_outputs(self) -> None:
         if not self.measurement_results_path or not self.measurement_terminal_path:
@@ -756,6 +760,9 @@ class HD2SerialCommunicator(QMainWindow):
 
     def write_terminal_log_to_path(self, path: Path) -> None:
         path.write_text(self.log_terminal.toPlainText(), encoding="utf-8")
+
+    def generate_session_timestamp(self) -> str:
+        return datetime.now().strftime("%Y%m%d_%H%M%S")
 
     def show_about(self) -> None:
         QMessageBox.information(
